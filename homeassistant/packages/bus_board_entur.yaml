@@ -1,0 +1,145 @@
+# Bus Board Card — entity mode for Entur (Norway)
+#
+# Drop this file into config/packages/ (enable packages with
+#   homeassistant:
+#     packages: !include_dir_named packages
+# in configuration.yaml), replace the stop ids, walk times and route tokens
+# below, check the config and restart.
+#
+# It creates:
+#   sensor.bus_raw          one POST to Entur every 30 s, raw estimated calls per stop
+#   sensor.bus_departures   attribute `list` = departures for the routes in
+#                           input_text.bus_watch, each with a leave-the-house time
+#   sensor.bus_next_leave   timestamp of the next "leave the house" moment
+#   sensor.bus_leave_in     minutes until then (for notifications / badges)
+#   input_text.bus_watch    "line@quay, line@quay, ..." — the routes shown
+#   input_number.bus_walk_a / bus_walk_b / bus_door_buffer
+#
+# Card:  type: custom:bus-board-card
+#        entity: sensor.bus_departures
+
+rest:
+  - resource: https://api.entur.io/journey-planner/v3/graphql
+    method: POST
+    scan_interval: 30
+    timeout: 15
+    headers:
+      Content-Type: application/json
+      ET-Client-Name: homeassistant-bus-board-card
+    # Two stops as aliases `a` and `b`; add or remove aliases as needed
+    # (and mirror the list in the template below).
+    payload: >-
+      {"query":"{ a: stopPlace(id: \"NSR:StopPlace:60447\") { estimatedCalls(numberOfDepartures: 40, timeRange: 5400) { ...c } }
+      b: stopPlace(id: \"NSR:StopPlace:271\") { estimatedCalls(numberOfDepartures: 40, timeRange: 5400) { ...c } } }
+      fragment c on EstimatedCall { quay { id publicCode } realtime cancellation aimedDepartureTime expectedDepartureTime
+      destinationDisplay { frontText } serviceJourney { id line { publicCode presentation { colour textColour } } } }"}
+    sensor:
+      - name: "Bus raw"
+        unique_id: bus_board_raw
+        icon: mdi:bus-clock
+        unit_of_measurement: "calls"
+        value_template: "{{ (value_json.data.a.estimatedCalls | count) + (value_json.data.b.estimatedCalls | count) }}"
+        json_attributes_path: "$.data"
+        json_attributes:
+          - a
+          - b
+
+input_text:
+  bus_watch:
+    name: "Bus routes shown"
+    icon: mdi:bus-multiple
+    max: 255
+    initial: "1@103009, 22@103009, 28@103009, R70@445"
+
+input_number:
+  bus_door_buffer:
+    name: "Bus - door buffer"
+    min: 0
+    max: 10
+    step: 0.5
+    initial: 1
+    unit_of_measurement: "min"
+    icon: mdi:door-open
+  bus_walk_a:
+    name: "Bus - walk to stop A"
+    min: 0
+    max: 30
+    step: 0.5
+    initial: 4
+    unit_of_measurement: "min"
+    icon: mdi:walk
+  bus_walk_b:
+    name: "Bus - walk to stop B"
+    min: 0
+    max: 30
+    step: 0.5
+    initial: 6
+    unit_of_measurement: "min"
+    icon: mdi:walk
+
+template:
+  - sensor:
+      - name: "Bus departures"
+        unique_id: bus_board_departures
+        icon: mdi:bus-clock
+        unit_of_measurement: "departures"
+        state: "{{ (this.attributes.list | count) if this is defined and this.attributes.list is defined else 0 }}"
+        attributes:
+          list: >-
+            {% set watch = states('input_text.bus_watch') | replace(' ', '') | lower %}
+            {% set watch = watch.split(',') %}
+            {% set buf = states('input_number.bus_door_buffer') | float(1) %}
+            {# quay id (number only) -> walk minutes and label #}
+            {% set walks = {'103009': states('input_number.bus_walk_a') | float(4),
+                            '108948': states('input_number.bus_walk_a') | float(4),
+                            '445': states('input_number.bus_walk_b') | float(6)} %}
+            {% set stops = {'103009': 'Buran 1', '108948': 'Buran 3', '445': 'Lademoen stasjon'} %}
+            {% set ns = namespace(l=[]) %}
+            {% for key in ['a', 'b'] %}
+              {% for c in ((state_attr('sensor.bus_raw', key) or {}).get('estimatedCalls') or []) %}
+                {% set q = c.quay.id.split(':')[-1] %}
+                {% set line = c.serviceJourney.line.publicCode %}
+                {% if (line | lower ~ '@' ~ q) in watch %}
+                  {% set exp = as_timestamp(c.expectedDepartureTime) %}
+                  {% set aim = as_timestamp(c.aimedDepartureTime) %}
+                  {% set walk = walks.get(q, 3) %}
+                  {% set leave = exp - (walk + buf) * 60 %}
+                  {% set pres = c.serviceJourney.line.presentation or {} %}
+                  {% set ns.l = ns.l + [{
+                    'line': line, 'dest': c.destinationDisplay.frontText,
+                    'quay': q, 'stop': stops.get(q, q),
+                    'aimed': c.aimedDepartureTime, 'expected': c.expectedDepartureTime,
+                    'expected_ts': exp | int, 'delay_min': ((exp - aim) / 60) | round(0) | int,
+                    'realtime': c.realtime, 'cancelled': c.cancellation,
+                    'sj': c.serviceJourney.id,
+                    'walk_min': walk, 'leave_at': leave | timestamp_local, 'leave_ts': leave | int,
+                    'color': ('#' ~ pres.colour) if pres.colour else none,
+                    'text_color': ('#' ~ pres.textColour) if pres.textColour else none }] %}
+                {% endif %}
+              {% endfor %}
+            {% endfor %}
+            {{ ns.l | sort(attribute='expected_ts') }}
+
+      - name: "Bus next leave"
+        unique_id: bus_board_next_leave
+        icon: mdi:door-open
+        device_class: timestamp
+        availability: "{{ (state_attr('sensor.bus_departures', 'list') or []) | count > 0 }}"
+        state: >-
+          {% set l = state_attr('sensor.bus_departures', 'list') or [] %}
+          {% set ns = namespace(t=none) %}
+          {% for d in l if ns.t is none and not d.cancelled and d.leave_ts > as_timestamp(now()) - 60 %}{% set ns.t = d.leave_ts %}{% endfor %}
+          {{ (ns.t | timestamp_local) if ns.t is not none else none }}
+
+      - name: "Bus leave in"
+        unique_id: bus_board_leave_in
+        icon: mdi:walk
+        unit_of_measurement: "min"
+        availability: "{{ has_value('sensor.bus_next_leave') }}"
+        state: "{{ ((as_timestamp(states('sensor.bus_next_leave')) - as_timestamp(now())) / 60) | round(0) | int }}"
+
+recorder:
+  exclude:
+    entities:
+      - sensor.bus_raw
+      - sensor.bus_departures
