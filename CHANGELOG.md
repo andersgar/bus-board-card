@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 — 2026-10-13
+
+- Visual editor in the dashboard card editor: data source, stops list,
+  appearance and advanced options, in English and Norwegian.
+
 ## 1.0.0 — 2026-10-13
 
 First public release.
