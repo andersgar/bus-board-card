@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bus-board-card editor dev</title>
+<style>
+  body { margin: 0; background: #111; color: #ddd; font-family: Roboto, system-ui, sans-serif; padding: 24px; --primary-text-color: #ddd; --secondary-text-color: #999; --divider-color: #444; --card-background-color: #1c1c1c; --primary-color: #2563eb; }
+  .grid { display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start; }
+  pre { background: #1c1c1c; padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; }
+  label { display: block; font-size: 12px; color: #999; margin: 6px 0 2px; }
+  input, select { font: inherit; width: 100%; box-sizing: border-box; background: #222; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 4px 6px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<p>Stub of Home Assistant's <code>ha-form</code> (plain inputs) so the editor's data flow can be tested outside HA. The real selectors only exist inside Home Assistant.</p>
+<div class="grid">
+  <div id="editor"></div>
+  <div><h3 style="margin:0 0 8px;font-size:14px;color:#999">config emitted by the editor</h3><pre id="out"></pre></div>
+</div>
+<script type="module">
+  // ---- minimal ha-form stub -------------------------------------------------
+  class HaFormStub extends HTMLElement {
+    set hass(h) { this._hass = h; }
+    set schema(s) { this._schema = s; this._draw(); }
+    set data(d) { this._data = { ...d }; this._draw(); }
+    set computeLabel(f) { this._label = f; this._draw(); }
+    set computeHelper(f) { this._helper = f; }
+    _draw() {
+      if (!this._schema || !this._data) return;
+      this.innerHTML = "";
+      const render = (items, parent) => {
+        for (const it of items) {
+          if (it.type === "grid") { const r = document.createElement("div"); r.className = "row"; render(it.schema, r); parent.appendChild(r); continue; }
+          const l = document.createElement("label"); l.textContent = this._label ? this._label(it) : it.name; parent.appendChild(l);
+          const sel = it.selector || {};
+          let el;
+          if (sel.boolean) { el = document.createElement("input"); el.type = "checkbox"; el.checked = !!this._data[it.name]; el.style.width = "auto"; }
+          else if (sel.select && !sel.select.multiple) { el = document.createElement("select"); for (const o of sel.select.options) { const op = document.createElement("option"); op.value = o.value; op.textContent = o.label; el.appendChild(op); } el.value = this._data[it.name] ?? ""; }
+          else if (sel.select && sel.select.multiple) { el = document.createElement("input"); el.value = (this._data[it.name] || []).join(", "); el.dataset.multi = "1"; }
+          else if (sel.number) { el = document.createElement("input"); el.type = "number"; el.step = sel.number.step || 1; el.value = this._data[it.name] ?? ""; }
+          else if (sel.object || sel.ui_action) { el = document.createElement("input"); el.value = JSON.stringify(this._data[it.name] ?? (sel.object ? {} : null)); el.dataset.json = "1"; }
+          else { el = document.createElement("input"); el.value = this._data[it.name] ?? ""; }
+          el.addEventListener("change", () => {
+            let v = sel.boolean ? el.checked : el.dataset.json ? JSON.parse(el.value || "null") : el.dataset.multi ? el.value.split(",").map((x) => x.trim()).filter(Boolean) : sel.number ? (el.value === "" ? undefined : Number(el.value)) : el.value;
+            this._data = { ...this._data, [it.name]: v };
+            this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: this._data }, bubbles: true, composed: true }));
+          });
+          parent.appendChild(el);
+        }
+      };
+      render(this._schema, this);
+    }
+  }
+  customElements.define("ha-form", HaFormStub);
+  window.loadCardHelpers = async () => ({ createCardElement: () => ({ constructor: { getConfigElement: async () => null } }) });
+
+  await import("../dist/bus-board-card.js");
+  const ed = document.createElement("bus-board-card-editor");
+  ed.hass = { language: "en", states: {} };
+  const cfg = new URLSearchParams(location.search).get("mode") === "entity"
+    ? { entity: "sensor.bus_departures", title: "Buss", compact: true, max_rows: 3, line_colors: { "1": "#3fa34d" } }
+    : { source: { provider: "entur", door_buffer_min: 1, watch_entity: "input_text.bus_watch", stops: [{ id: "NSR:StopPlace:60447", walk_min: 4, lines: ["1", "22"], quays: ["103009"] }, { id: "NSR:StopPlace:271", walk_min: 6 }] }, title: "Buss mot sentrum", max_rows: 8 };
+  ed.setConfig(cfg);
+  const out = document.getElementById("out");
+  out.textContent = JSON.stringify(cfg, null, 2);
+  ed.addEventListener("config-changed", (ev) => { out.textContent = JSON.stringify(ev.detail.config, null, 2); window.lastConfig = ev.detail.config; });
+  document.getElementById("editor").appendChild(ed);
+  window.editor = ed;
+</script>
+</body>
+</html>
