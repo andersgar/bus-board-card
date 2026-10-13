@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bus-board-card dev</title>
+<style>
+  body { margin: 0; background: #111; color: #ddd; font-family: Roboto, system-ui, sans-serif; padding: 24px; }
+  ha-card { display: block; border-radius: 12px; background: #1c1c1c; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px; align-items: start; }
+  #a { display: block; max-width: 290px; }
+  h3 { font-weight: 500; margin: 0 0 8px; font-size: 14px; color: #999; }
+  code { color: #f2a900; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div><h3>entity mode · compact · fixture (<code>dev/fixture.json</code>)</h3><bus-board-card id="a"></bus-board-card></div>
+  <div><h3>entity mode · full · fixture</h3><bus-board-card id="b"></bus-board-card></div>
+  <div><h3>source mode · live Entur · Trondheim (two stops, watch tokens, nb)</h3><bus-board-card id="c"></bus-board-card></div>
+  <div><h3>source mode · live Entur · Oslo Jernbanetorget (en, inline)</h3><bus-board-card id="d"></bus-board-card></div>
+  <div><h3>source mode · live Transitous · Berlin Alexanderplatz (de)</h3><bus-board-card id="e"></bus-board-card></div>
+  <div><h3>source mode · live Transitous · Stockholm C (sv, compact)</h3><bus-board-card id="f"></bus-board-card></div>
+</div>
+<script type="module">
+  import "../dist/bus-board-card.js";
+  const fx = await (await fetch("./fixture.json")).json();
+  // shift the fixture so the first departure is ~7 min from now, regardless of when it was fetched
+  const now = Date.now() / 1000;
+  const shift = fx.list.length ? (now + 7 * 60) - fx.list[0].expected_ts : 0;
+  const list = fx.list.map((d, i) => ({ ...d, expected_ts: d.expected_ts + shift, leave_ts: d.leave_ts + shift,
+    expected: new Date((d.expected_ts + shift) * 1000).toISOString(), delay_min: i === 1 ? 3 : d.delay_min, cancelled: i === 4 }));
+  list[2] = { ...list[2], leave_ts: now - 30, expected_ts: now + 3.5 * 60, expected: new Date((now + 210) * 1000).toISOString() }; // "run!"
+  list[1] = { ...list[1], leave_ts: now + 20, expected_ts: now + 5.5 * 60, expected: new Date((now + 330) * 1000).toISOString() }; // "leave now"
+  list[3] = { ...list[3], leave_ts: now + 9 * 60, expected_ts: now + 11 * 60, expected: new Date((now + 660) * 1000).toISOString(), walk_min: 1 };
+  const hass = { language: "nb", config: { latitude: 63.4364, longitude: 10.4250 },
+    states: {
+      "sensor.bus_departures": { state: String(list.length), last_updated: new Date().toISOString(), attributes: { list } },
+      "input_text.bus_watch": { state: "1@103009, 22@103009, 28@103009, 2@108948" },
+      "input_number.bus_walk_buran": { state: "4" },
+    } };
+  const a = document.getElementById("a"); a.setConfig({ entity: "sensor.bus_departures", compact: true, max_rows: 4, title: "Buss", line_colors: { "1": "#3fa34d", "22": "#f2a900", "2": "#2b7fd1", "28": "#00a3a3" }, tap_action: { action: "navigate", navigation_path: "#bus_board" } }); a.hass = hass;
+  const b = document.getElementById("b"); b.setConfig({ entity: "sensor.bus_departures", max_rows: 8, title: "Buss mot sentrum", stop_labels: { "103009": "Buran 1", "108948": "Buran 3" } }); b.hass = hass;
+  const c = document.getElementById("c"); c.setConfig({
+    source: {
+      provider: "entur", refresh: 30, door_buffer_min: 1,
+      watch_entity: "input_text.bus_watch",
+      stops: [
+        { id: "NSR:StopPlace:60447", walk_min: "input_number.bus_walk_buran", quay_labels: { "103009": "Buran 1", "108948": "Buran 3" } },
+        { id: "NSR:StopPlace:271", walk_min: 6, name: "Lademoen st." },
+      ],
+    }, title: "Buss mot sentrum", max_rows: 8 }); c.hass = hass;
+  const d = document.getElementById("d"); d.setConfig({
+    source: { provider: "entur", stops: [{ id: "NSR:StopPlace:58366", walk_min: 6, exclude_lines: [] }], time_range: 1800 },
+    language: "en", label: "inline", max_rows: 8 }); d.hass = { ...hass, language: "en" };
+  const e = document.getElementById("e"); e.setConfig({
+    source: { provider: "transitous", stops: [{ id: "de-VBB_de:11000:900100003", walk_min: 5 }], departures_per_stop: 20 },
+    language: "de", title: "Alexanderplatz", max_rows: 8 }); e.hass = { ...hass, language: "de" };
+  const f = document.getElementById("f"); f.setConfig({
+    source: { provider: "transitous", stops: [{ id: "se-Trafiklab_740000001", walk_min: 8 }], departures_per_stop: 20 },
+    language: "sv", label: "inline", compact: true, title: "Stockholm C", max_rows: 6 }); f.hass = { ...hass, language: "sv" };
+  window.cards = { a, b, c, d, e, f };
+</script>
+</body>
+</html>
