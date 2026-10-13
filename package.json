@@ -1,0 +1,17 @@
+{
+  "name": "bus-board-card",
+  "version": "1.0.0",
+  "description": "Home Assistant card: upcoming public transport departures with leave-the-house countdown bars",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "dev": "python -m http.server 8765"
+  },
+  "repository": "github:andersgar/bus-board-card",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
