@@ -5,6 +5,11 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the build to, e.g. v1.0.0"
+        required: true
 
 permissions:
   contents: write
@@ -20,9 +25,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Set version from tag
-        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
+        run: npm version --no-git-tag-version --allow-same-version "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
       - run: npm run build
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: dist/bus-board-card.js
