@@ -18,6 +18,7 @@
 import { pickLanguage } from "./i18n.js";
 import { getProvider } from "./providers/index.js";
 import { subscribe } from "./poller.js";
+import { BusBoardCardEditor } from "./editor.js";
 
 // eslint-disable-next-line no-undef
 const VERSION = typeof __VERSION__ === "string" ? __VERSION__ : "dev";
@@ -138,6 +139,10 @@ class BusBoardCard extends HTMLElement {
       title: "Jernbanetorget",
       max_rows: 5,
     };
+  }
+
+  static getConfigElement() {
+    return document.createElement("bus-board-card-editor");
   }
 
   setConfig(config) {
@@ -570,6 +575,7 @@ class BusBoardCard extends HTMLElement {
 }
 
 if (!customElements.get("bus-board-card")) customElements.define("bus-board-card", BusBoardCard);
+if (!customElements.get("bus-board-card-editor")) customElements.define("bus-board-card-editor", BusBoardCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "bus-board-card",
