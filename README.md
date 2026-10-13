@@ -26,6 +26,8 @@ to **the moment you have to leave the house** to catch it.
   …); a stable palette otherwise; override anything with `line_colors`.
 - Compact tile and full pop-up variants, English / Norwegian / Swedish /
   German strings, works in sections views, masonry and bubble-card pop-ups.
+- **Visual editor.** Every option below, including the list of stops, can be
+  set in the dashboard card editor without writing YAML.
 
 ![Compact tile](docs/img/compact.png)
 
@@ -80,6 +82,10 @@ refresh interval. See [docs/providers.md](docs/providers.md) for the full
 picture, including what to do in countries where the only API needs a key.
 
 ## Configuration
+
+Open the card in the dashboard editor for a form with all of these options
+(the colour and label maps are edited as YAML inside the form). The YAML
+reference:
 
 ### Card options
 
